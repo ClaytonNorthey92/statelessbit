@@ -5,10 +5,26 @@ CREATE TABLE txouts (
     outpoint_txhash TEXT NOT NULL,
     UNIQUE (outpoint_index, outpoint_txhash),
     
+    created_at_prev_block_hash TEXT NOT NULL,
     created_at_block_hash TEXT NOT NULL,
-    spent_at_block TEXT NULL,
+    created_at_block_height INT NULL,
 
-    owner_address TEXT NOT NULL
+    owner_address TEXT[] NULL,
+
+    tx_value BIGINT NOT NULL,
+    pk_script BYTEA NOT NULL
 );
 
-CREATE INDEX txouts_spending_idx ON txouts (created_at_block_hash, spent_at_block, owner_address);
+CREATE TABLE txout_spends (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    outpoint_index INT NOT NULL CHECK (outpoint_index >= 0),
+    outpoint_txhash TEXT NOT NULL,
+    UNIQUE (outpoint_index, outpoint_txhash),
+    
+    spent_at_block_hash TEXT NULL
+);
+
+CREATE INDEX txouts_create_idx ON txouts (created_at_block_hash, created_at_block_height, owner_address);
+
+CREATE INDEX txouts_spending_idx ON txout_spends (outpoint_index, outpoint_txhash);

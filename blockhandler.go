@@ -14,7 +14,6 @@ var ErrBlockNotFound = errors.New("block not found")
 
 type Store interface {
 	InsertBlock(*wire.MsgBlock) error
-	GetBlock(*chainhash.Hash) (*wire.MsgBlock, error)
 	Clear() error
 	ListUnspent(btcutil.Address, chainhash.Hash) ([]*wire.TxOut, error)
 }
@@ -42,15 +41,6 @@ func (bh *BlockHandler) StoreBlock(block *wire.MsgBlock) error {
 	}
 
 	return nil
-}
-
-func (bh *BlockHandler) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
-	block, err := bh.store.GetBlock(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	return block, nil
 }
 
 func (bh *BlockHandler) ListUnspent(addr btcutil.Address, hash chainhash.Hash) ([]*wire.TxOut, error) {

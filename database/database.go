@@ -23,6 +23,8 @@ func getDatabaseURI(dbname string) string {
 func NewRandomDatabase(ctx context.Context) (string, DropDBFunc, error) {
 	randomDBName := fmt.Sprintf("watcher-%d", rand.IntN(1000000))
 
+	fmt.Println(randomDBName)
+
 	db, err := sql.Open("postgres", getDatabaseURI("admin"))
 	if err != nil {
 		return "", nil, fmt.Errorf("could not connect to database: %s", err)
@@ -52,7 +54,7 @@ func CreateNewRandomDatabase(ctx context.Context) (*sql.DB, DropDBFunc, error) {
 		return nil, nil, err
 	}
 
-	err = NewDatabase(connectionURI, fmt.Sprintf("file://%s/migrations", path))
+	err = NewDatabase(connectionURI, fmt.Sprintf("file://%s/database/migrations", path))
 	if err != nil {
 		return nil, nil , err
 	}
