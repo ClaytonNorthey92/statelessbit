@@ -25,7 +25,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		log.Printf("sync error: %v", err)
 	}
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -33,6 +33,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ticker.C:
 			if err := d.sync(ctx); err != nil {
 				log.Printf("sync error: %v", err)
+			}
+			if err := SetBlockHeights(ctx, d.db); err != nil {
+				log.Printf("set block heights error: %v", err)
 			}
 		case <-ctx.Done():
 			return ctx.Err()

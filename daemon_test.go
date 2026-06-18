@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -123,6 +125,33 @@ func TestDaemonIndexesChain(t *testing.T) {
 		for _, tx := range block.Transactions {
 			assertTxOuts(ctx, t, db, hash[:], tx)
 			assertTxIns(ctx, t, db, hash[:], tx)
+		}
+	}
+
+	if err := SetBlockHeights(ctx, db); err != nil {
+		t.Fatalf("SetBlockHeights: %v", err)
+	}
+
+	genesisHash, err := client.GetBlockHash(0)
+	if err != nil {
+		t.Fatalf("getting genesis hash: %v", err)
+	}
+
+	allHashes := append([]*chainhash.Hash{genesisHash}, blockHashes...)
+	for wantHeight, hash := range allHashes {
+		var gotHeight sql.NullInt64
+		err := db.QueryRowContext(ctx,
+			`SELECT height FROM block_headers WHERE hash = $1`, hash[:],
+		).Scan(&gotHeight)
+		if err != nil {
+			t.Fatalf("querying height for block %s: %v", hash, err)
+		}
+		if !gotHeight.Valid {
+			t.Errorf("block %s height is NULL, want %d", hash, wantHeight)
+			continue
+		}
+		if gotHeight.Int64 != int64(wantHeight) {
+			t.Errorf("block %s height = %d, want %d", hash, gotHeight.Int64, wantHeight)
 		}
 	}
 }

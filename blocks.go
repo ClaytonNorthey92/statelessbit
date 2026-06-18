@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
@@ -45,6 +46,42 @@ func UpdateBlockHeaderHeight(ctx context.Context, db *sql.DB, blockHash []byte, 
 		height, blockHash,
 	)
 	return err
+}
+
+func SetBlockHeights(ctx context.Context, db *sql.DB) error {
+	var current []byte
+	err := db.QueryRowContext(ctx,
+		`SELECT hash FROM block_headers WHERE prev_hash = $1`,
+		make([]byte, 32),
+	).Scan(&current)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("finding genesis block: %w", err)
+	}
+
+	for height := int64(0); ; height++ {
+		if err := UpdateBlockHeaderHeight(ctx, db, current, height); err != nil {
+			return fmt.Errorf("setting height %d: %w", height, err)
+		}
+
+		var next []byte
+		err := db.QueryRowContext(ctx,
+			`SELECT hash FROM block_headers WHERE prev_hash = $1`,
+			current,
+		).Scan(&next)
+		if err == sql.ErrNoRows {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("finding block at height %d: %w", height+1, err)
+		}
+
+		current = next
+	}
+
+	return nil
 }
 
 func InsertMsgBlock(ctx context.Context, db *sql.DB, msg *wire.MsgBlock) error {
