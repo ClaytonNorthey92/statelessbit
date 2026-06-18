@@ -12,7 +12,8 @@ CREATE TABLE txouts (
     owner_address TEXT[] NULL,
 
     tx_value BIGINT NOT NULL,
-    pk_script BYTEA NOT NULL
+    pk_script BYTEA NOT NULL,
+    active_block BOOL NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE txout_spends (
@@ -22,7 +23,7 @@ CREATE TABLE txout_spends (
     outpoint_txhash TEXT NOT NULL,
     UNIQUE (outpoint_index, outpoint_txhash),
     
-    spent_at_block_hash TEXT NULL
+    spent_at_block_hash TEXT NOT NULL
 );
 
 CREATE INDEX txouts_create_idx ON txouts (created_at_block_hash, created_at_block_height, owner_address);

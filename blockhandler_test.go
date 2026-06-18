@@ -80,12 +80,12 @@ func TestIndexUTXOs(t *testing.T) {
 			t.Logf("%s --> %s", tti.chain[i].Header.BlockHash(), tti.chain[i+1].Header.BlockHash())
 		}
 
-		db, _, err := mydatabase.CreateNewRandomDatabase(context.Background())
+		db, dropFn, err := mydatabase.CreateNewRandomDatabase(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		// defer dropFn()
+		defer dropFn()
 
 		for _, s := range []Store{
 			&MemoryStore{},
@@ -97,6 +97,11 @@ func TestIndexUTXOs(t *testing.T) {
 					if err := bh.StoreBlock(block); err != nil {
 						t.Fatal(err)
 					}
+
+				}
+
+				if err := bh.store.SetActiveFromTip(tti.chain[1].Header.BlockHash()); err != nil {
+					t.Fatal(err)
 				}
 
 				unspentInQuestion := tti.chain[1].Transactions[1].TxOut[1]

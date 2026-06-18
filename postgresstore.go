@@ -99,11 +99,41 @@ func (p *PostgresStore) InsertBlock(block *wire.MsgBlock) error {
 	return nil
 }
 
+func (p *PostgresStore) DeleteBlock(hash chainhash.Hash) error {
+	dbtx, err := p.db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err := dbtx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			panic(err)
+		}
+	}()
+
+	_, err = dbtx.Exec("DELETE FROM txouts WHERE created_at_block_hash = $1", hash.String())
+	if err != nil {
+		return err
+	}
+
+	_, err = dbtx.Exec("DELETE FROM txout_spends WHERE spent_at_block_hash = $1", hash.String())
+	if err != nil {
+		return err
+	}
+
+	if err := dbtx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (p *PostgresStore) ListUnspent(addr btcutil.Address, hash chainhash.Hash) ([]*wire.TxOut, error) {
 	fmt.Printf("checking unspent with address %s and hash %s\n", addr.String(), hash.String())
 	rows, err := p.db.Query(
 		`
-		SELECT tx_value, pk_script FROM txouts txo WHERE $1 = ANY(owner_address) 
+		SELECT tx_value, pk_script FROM txouts txo WHERE $1 = ANY(owner_address)
+		AND active_block IS TRUE
 		AND (
 			NOT EXISTS (
 				SELECT * FROM txout_spends WHERE
@@ -145,6 +175,52 @@ func (p *PostgresStore) ListUnspent(addr btcutil.Address, hash chainhash.Hash) (
 	}
 
 	return result, nil
+}
+
+func (p *PostgresStore) SetActiveFromTip(hash chainhash.Hash) error {
+	dbtx, err := p.db.Begin()
+	if err != nil {
+		return fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer func() {
+		if err := dbtx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			panic(err)
+		}
+	}()
+
+	if _, err := dbtx.Exec(`UPDATE txouts SET active_block = FALSE`); err != nil {
+		return err
+	}
+
+	for {
+		if _, err := dbtx.Exec(`UPDATE txouts SET active_block = TRUE WHERE created_at_block_hash = $1`, hash.String()); err != nil {
+			return err
+		}
+
+		var prevHashStr string
+		if err := dbtx.QueryRow(
+			`SELECT created_at_prev_block_hash FROM txouts WHERE created_at_block_hash = $1 LIMIT 1`,
+			hash.String(),
+		).Scan(&prevHashStr); err != nil {
+			return fmt.Errorf("could not get prev block hash for %s: %w", hash, err)
+		}
+
+		if prevHashStr == (chainhash.Hash{}).String() {
+			break
+		}
+
+		prevHash, err := chainhash.NewHashFromStr(prevHashStr)
+		if err != nil {
+			return fmt.Errorf("could not parse prev block hash %q: %w", prevHashStr, err)
+		}
+		hash = *prevHash
+	}
+
+	if err := dbtx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *PostgresStore) setHeights() error {

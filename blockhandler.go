@@ -3,10 +3,11 @@ package statelessbit
 import (
 	"errors"
 	"fmt"
+	"sync"
+
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"sync"
 )
 
 var ErrBlockExists = errors.New("block already exists")
@@ -14,6 +15,8 @@ var ErrBlockNotFound = errors.New("block not found")
 
 type Store interface {
 	InsertBlock(*wire.MsgBlock) error
+	DeleteBlock(chainhash.Hash) error
+	SetActiveFromTip(hash chainhash.Hash) error
 	Clear() error
 	ListUnspent(btcutil.Address, chainhash.Hash) ([]*wire.TxOut, error)
 }
@@ -64,6 +67,10 @@ func (ms *MemoryStore) InsertBlock(block *wire.MsgBlock) error {
 	return nil
 }
 
+func (ms *MemoryStore) SetActiveFromTip(hash chainhash.Hash) error {
+	return nil
+}
+
 func (ms *MemoryStore) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
 	ms.mtx.Lock()
 	defer ms.mtx.Unlock()
@@ -74,6 +81,15 @@ func (ms *MemoryStore) GetBlock(hash *chainhash.Hash) (*wire.MsgBlock, error) {
 	}
 
 	return block, nil
+}
+
+func (ms *MemoryStore) DeleteBlock(hash chainhash.Hash) error {
+	ms.mtx.Lock()
+	defer ms.mtx.Unlock()
+
+	delete(ms.store, hash.String())
+
+	return nil
 }
 
 func (ms *MemoryStore) Clear() error {

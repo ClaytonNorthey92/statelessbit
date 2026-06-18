@@ -23,6 +23,10 @@ func (c *ChainTracker) forEachRawBlock(callback func(*wire.MsgBlock) error) erro
 	}
 
 	for _, chainTip := range chainTips {
+		if chainTip.Status != "active" {
+			continue
+		}
+		
 		thisHash, err := chainhash.NewHashFromStr(chainTip.Hash)
 		if err != nil {
 			return err
@@ -49,3 +53,4 @@ func (c *ChainTracker) forEachRawBlock(callback func(*wire.MsgBlock) error) erro
 
 	return nil
 }
+
