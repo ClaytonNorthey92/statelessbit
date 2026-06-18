@@ -1,0 +1,105 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/btcsuite/btcd/wire"
+)
+
+type BlockHeader struct {
+	Hash       []byte
+	Version    int32
+	PrevHash   []byte
+	MerkleRoot []byte
+	Timestamp  time.Time
+	Bits       uint32
+	Nonce      uint32
+}
+
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func MsgBlockToBlockHeader(msg *wire.MsgBlock) *BlockHeader {
+	hash := msg.Header.BlockHash()
+	return &BlockHeader{
+		Hash:       hash[:],
+		Version:    msg.Header.Version,
+		PrevHash:   msg.Header.PrevBlock[:],
+		MerkleRoot: msg.Header.MerkleRoot[:],
+		Timestamp:  msg.Header.Timestamp,
+		Bits:       msg.Header.Bits,
+		Nonce:      msg.Header.Nonce,
+	}
+}
+
+func InsertBlockHeader(ctx context.Context, db *sql.DB, b *BlockHeader) error {
+	return insertBlockHeader(ctx, db, b)
+}
+
+func UpdateBlockHeaderHeight(ctx context.Context, db *sql.DB, blockHash []byte, height int64) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE block_headers SET height = $1 WHERE hash = $2`,
+		height, blockHash,
+	)
+	return err
+}
+
+func InsertMsgBlock(ctx context.Context, db *sql.DB, msg *wire.MsgBlock) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	header := MsgBlockToBlockHeader(msg)
+	if err := insertBlockHeader(ctx, tx, header); err != nil {
+		return err
+	}
+
+	for _, msgTx := range msg.Transactions {
+		txHash := msgTx.TxHash()
+		for i, txOut := range msgTx.TxOut {
+			if err := insertTxOut(ctx, tx, header.Hash, txHash[:], i, txOut); err != nil {
+				return err
+			}
+		}
+		for i, txIn := range msgTx.TxIn {
+			if err := insertTxIn(ctx, tx, header.Hash, txHash[:], i, txIn); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func insertBlockHeader(ctx context.Context, ex sqlExecer, b *BlockHeader) error {
+	_, err := ex.ExecContext(ctx, `
+		INSERT INTO block_headers (hash, version, prev_hash, merkle_root, timestamp, bits, nonce)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		b.Hash, b.Version, b.PrevHash, b.MerkleRoot, b.Timestamp, int64(b.Bits), int64(b.Nonce),
+	)
+	return err
+}
+
+func insertTxIn(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, index int, txIn *wire.TxIn) error {
+	prevHash := txIn.PreviousOutPoint.Hash
+	_, err := ex.ExecContext(ctx, `
+		INSERT INTO txins (block_hash, tx_hash, tx_index, prev_out_hash, prev_out_index, script_sig, sequence)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		blockHash, txHash, index, prevHash[:], int64(txIn.PreviousOutPoint.Index), txIn.SignatureScript, int64(txIn.Sequence),
+	)
+	return err
+}
+
+func insertTxOut(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, index int, txOut *wire.TxOut) error {
+	_, err := ex.ExecContext(ctx, `
+		INSERT INTO txouts (block_hash, tx_hash, tx_index, value, pk_script)
+		VALUES ($1, $2, $3, $4, $5)`,
+		blockHash, txHash, index, txOut.Value, txOut.PkScript,
+	)
+	return err
+}

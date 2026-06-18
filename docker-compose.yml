@@ -1,4 +1,9 @@
 version: '3'
+
+# BITCOIN_NETWORK: regtest (default) | testnet | signet | mainnet
+# BITCOIN_RPC_USER / BITCOIN_RPC_PASS: RPC credentials (default: bitcoin / bitcoin)
+# All networks are mapped to port 18443 via -rpcport so the daemon config stays constant.
+
 services:
   postgres:
     image: postgres:16.13-bookworm@sha256:472efd9a66f2b2f1a5aeb18b28de74332e6ef88c2b93a1a5d812fb6db67a5f60
@@ -8,3 +13,36 @@ services:
       POSTGRES_DB: admin
     ports:
       - 5432:5432
+
+  bitcoind:
+    image: kylemanna/bitcoind
+    command: >-
+      bitcoind
+      -printtoconsole
+      -${BITCOIN_NETWORK:-regtest}
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+      -rpcport=18443
+      -rpcuser=${BITCOIN_RPC_USER:-bitcoin}
+      -rpcpassword=${BITCOIN_RPC_PASS:-bitcoin}
+      -server=1
+      -txindex=1
+    ports:
+      - 18443:18443
+    volumes:
+      - bitcoind_data:/bitcoin/.bitcoin
+
+  daemon:
+    build: .
+    environment:
+      DATABASE_URL: postgres://user:password@postgres:5432/admin?sslmode=disable
+      BITCOIN_RPC_HOST: bitcoind:18443
+      BITCOIN_RPC_USER: ${BITCOIN_RPC_USER:-bitcoin}
+      BITCOIN_RPC_PASS: ${BITCOIN_RPC_PASS:-bitcoin}
+    depends_on:
+      - postgres
+      - bitcoind
+    restart: on-failure
+
+volumes:
+  bitcoind_data:

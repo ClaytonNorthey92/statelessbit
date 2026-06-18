@@ -1,31 +1,28 @@
-CREATE TABLE txouts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    outpoint_index INT NOT NULL CHECK (outpoint_index >= 0),
-    outpoint_txhash TEXT NOT NULL,
-    UNIQUE (outpoint_index, outpoint_txhash),
-    
-    created_at_prev_block_hash TEXT NOT NULL,
-    created_at_block_hash TEXT NOT NULL,
-    created_at_block_height INT NULL,
+-- Querying by hash using a hex string (e.g. from mempool.space):
+--
+--   SELECT * FROM block_headers WHERE hash = decode('<hex>', 'hex');
+--   SELECT * FROM block_headers WHERE hash = '\x<hex>';
+--
+-- Note: mempool.space displays hashes in reversed byte order relative to
+-- Bitcoin's internal representation. If hashes are stored in internal
+-- (little-endian) byte order, reverse the bytes before comparing:
+--
+--   CREATE OR REPLACE FUNCTION reverse_bytes(b BYTEA) RETURNS BYTEA AS $$
+--     SELECT string_agg(byte, '' ORDER BY n DESC)::bytea
+--     FROM (SELECT n, substring(b FROM n FOR 1) AS byte
+--           FROM generate_series(1, length(b)) AS n) sub;
+--   $$ LANGUAGE sql IMMUTABLE STRICT;
+--
+--   SELECT * FROM block_headers WHERE hash = reverse_bytes(decode('<hex>', 'hex'));
 
-    owner_address TEXT[] NULL,
-
-    tx_value BIGINT NOT NULL,
-    pk_script BYTEA NOT NULL,
-    active_block BOOL NOT NULL DEFAULT FALSE
+CREATE TABLE block_headers (
+    id              BIGSERIAL PRIMARY KEY,
+    hash            BYTEA        NOT NULL UNIQUE,
+    version         INTEGER      NOT NULL,
+    prev_hash       BYTEA        NOT NULL,
+    merkle_root     BYTEA        NOT NULL,
+    timestamp       TIMESTAMPTZ  NOT NULL,
+    bits            BIGINT       NOT NULL,
+    nonce           BIGINT       NOT NULL,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE txout_spends (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    outpoint_index INT NOT NULL CHECK (outpoint_index >= 0),
-    outpoint_txhash TEXT NOT NULL,
-    UNIQUE (outpoint_index, outpoint_txhash),
-    
-    spent_at_block_hash TEXT NOT NULL
-);
-
-CREATE INDEX txouts_create_idx ON txouts (created_at_block_hash, created_at_block_height, owner_address);
-
-CREATE INDEX txouts_spending_idx ON txout_spends (outpoint_index, outpoint_txhash);
