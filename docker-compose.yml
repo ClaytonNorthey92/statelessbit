@@ -11,8 +11,6 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: admin
-    ports:
-      - 5432:5432
 
   bitcoind:
     image: kylemanna/bitcoind
@@ -27,8 +25,6 @@ services:
       -rpcpassword=${BITCOIN_RPC_PASS:-bitcoin}
       -server=1
       -txindex=1
-    ports:
-      - 18443:18443
     volumes:
       - bitcoind_data:/bitcoin/.bitcoin
 
