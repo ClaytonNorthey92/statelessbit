@@ -51,20 +51,6 @@ func UpdateBlockHeaderHeight(ctx context.Context, db *sql.DB, blockHash []byte, 
 }
 
 func SetBlockHeights(ctx context.Context, db *sql.DB) error {
-	var hasHeights bool
-	if err := db.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM block_headers WHERE height > 0)`,
-	).Scan(&hasHeights); err != nil {
-		return fmt.Errorf("checking for existing heights: %w", err)
-	}
-
-	if hasHeights {
-		return setBlockHeightsIncremental(ctx, db)
-	}
-	return setBlockHeightsFromGenesis(ctx, db)
-}
-
-func setBlockHeightsFromGenesis(ctx context.Context, db *sql.DB) error {
 	var current []byte
 	err := db.QueryRowContext(ctx,
 		`SELECT hash FROM block_headers WHERE prev_hash = $1`,
@@ -100,38 +86,6 @@ func setBlockHeightsFromGenesis(ctx context.Context, db *sql.DB) error {
 		current = next
 	}
 
-	return nil
-}
-
-func setBlockHeightsIncremental(ctx context.Context, db *sql.DB) error {
-	for {
-		res, err := db.ExecContext(ctx, `
-			UPDATE block_headers
-			SET height = (
-				SELECT bh2.height + 1
-				FROM block_headers bh2
-				WHERE bh2.hash = block_headers.prev_hash
-			)
-			WHERE height IS NULL
-			AND EXISTS (
-				SELECT 1 FROM block_headers bh2
-				WHERE bh2.hash = block_headers.prev_hash
-				AND bh2.height IS NOT NULL
-			)
-		`)
-		if err != nil {
-			return fmt.Errorf("incremental height update: %w", err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("checking rows affected: %w", err)
-		}
-		if n == 0 {
-			log.Printf("incremental height update complete")
-			break
-		}
-		log.Printf("set heights for %d blocks", n)
-	}
 	return nil
 }
 
