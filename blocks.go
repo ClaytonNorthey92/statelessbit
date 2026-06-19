@@ -116,7 +116,7 @@ func InsertMsgBlock(ctx context.Context, db *sql.DB, msg *wire.MsgBlock) error {
 func insertBlockHeader(ctx context.Context, ex sqlExecer, b *BlockHeader) error {
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO block_headers (hash, version, prev_hash, merkle_root, timestamp, bits, nonce)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
 		b.Hash, b.Version, b.PrevHash, b.MerkleRoot, b.Timestamp, int64(b.Bits), int64(b.Nonce),
 	)
 	return err
@@ -126,7 +126,7 @@ func insertTxIn(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, ind
 	prevHash := txIn.PreviousOutPoint.Hash
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO txins (block_hash, tx_hash, tx_index, prev_out_hash, prev_out_index, script_sig, sequence)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
 		blockHash, txHash, index, prevHash[:], int64(txIn.PreviousOutPoint.Index), txIn.SignatureScript, int64(txIn.Sequence),
 	)
 	return err
@@ -135,7 +135,7 @@ func insertTxIn(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, ind
 func insertTxOut(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, index int, txOut *wire.TxOut) error {
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO txouts (block_hash, tx_hash, tx_index, value, pk_script)
-		VALUES ($1, $2, $3, $4, $5)`,
+		VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
 		blockHash, txHash, index, txOut.Value, txOut.PkScript,
 	)
 	return err
