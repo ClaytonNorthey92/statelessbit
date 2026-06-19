@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
