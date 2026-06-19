@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/lib/pq"
 )
 
 type Daemon struct {
@@ -126,7 +127,11 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 		}
 
 		if err := InsertMsgBlock(ctx, d.db, block); err != nil {
-			return fmt.Errorf("inserting block %s: %w", &current, err)
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+				log.Printf("block %s already exists, skipping", &current)
+			} else {
+				return fmt.Errorf("inserting block %s: %w", &current, err)
+			}
 		}
 
 		inserted++
