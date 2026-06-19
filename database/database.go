@@ -54,7 +54,7 @@ func CreateNewRandomDatabase(ctx context.Context) (*sql.DB, DropDBFunc, error) {
 
 	err = NewDatabase(connectionURI, fmt.Sprintf("file://%s/database/migrations", path))
 	if err != nil {
-		return nil, nil , err
+		return nil, nil, err
 	}
 
 	db, err := sql.Open("postgres", connectionURI)
