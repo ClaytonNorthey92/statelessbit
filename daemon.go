@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -21,6 +22,25 @@ func NewDaemon(db *sql.DB, client *rpcclient.Client) *Daemon {
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		d.runSync(ctx)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		d.runSetBlockHeights(ctx)
+	}()
+
+	wg.Wait()
+	return ctx.Err()
+}
+
+func (d *Daemon) runSync(ctx context.Context) {
 	if err := d.sync(ctx); err != nil {
 		log.Printf("sync error: %v", err)
 	}
@@ -34,11 +54,28 @@ func (d *Daemon) Run(ctx context.Context) error {
 			if err := d.sync(ctx); err != nil {
 				log.Printf("sync error: %v", err)
 			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (d *Daemon) runSetBlockHeights(ctx context.Context) {
+	if err := SetBlockHeights(ctx, d.db); err != nil {
+		log.Printf("set block heights error: %v", err)
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
 			if err := SetBlockHeights(ctx, d.db); err != nil {
 				log.Printf("set block heights error: %v", err)
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		}
 	}
 }
