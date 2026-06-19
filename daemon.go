@@ -61,17 +61,19 @@ func (d *Daemon) runSync(ctx context.Context) {
 }
 
 func (d *Daemon) runSetBlockHeights(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	if err := SetBlockHeights(ctx, d.db); err != nil {
+		log.Printf("set block heights error: %v", err)
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			go func() {
-				if err := SetBlockHeights(ctx, d.db); err != nil {
-					log.Printf("set block heights error: %v", err)
-				}
-			}()
+			if err := SetBlockHeights(ctx, d.db); err != nil {
+				log.Printf("set block heights error: %v", err)
+			}
 		case <-ctx.Done():
 			return
 		}

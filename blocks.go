@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
@@ -62,9 +64,11 @@ func SetBlockHeights(ctx context.Context, db *sql.DB) error {
 	}
 
 	for height := int64(0); ; height++ {
+		log.Printf("setting height %d for block %s", height, hex.EncodeToString(current))
 		if err := UpdateBlockHeaderHeight(ctx, db, current, height); err != nil {
 			return fmt.Errorf("setting height %d: %w", height, err)
 		}
+		log.Printf("done setting height")
 
 		var next []byte
 		err := db.QueryRowContext(ctx,
@@ -72,6 +76,7 @@ func SetBlockHeights(ctx context.Context, db *sql.DB) error {
 			current,
 		).Scan(&next)
 		if err == sql.ErrNoRows {
+			log.Printf("set block heights complete at height %d", height)
 			break
 		}
 		if err != nil {
