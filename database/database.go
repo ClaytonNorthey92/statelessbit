@@ -82,8 +82,8 @@ func NewDatabase(connectionURI string, migrationsDirectory string) error {
 		return fmt.Errorf("could not create new migrations instance: %s", err)
 	}
 
-	if err := m.Up(); err != nil {
-		return fmt.Errorf("could not migratee up: %s", err)
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("could not migrate up: %s", err)
 	}
 
 	return nil
