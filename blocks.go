@@ -49,7 +49,6 @@ func UpdateBlockHeaderHeight(ctx context.Context, db *sql.DB, blockHash []byte, 
 }
 
 func SetBlockHeights(ctx context.Context, db *sql.DB) error {
-	updatedSome := false
 	for {
 		result, err := db.ExecContext(ctx, `
 			UPDATE block_headers
@@ -75,10 +74,15 @@ func SetBlockHeights(ctx context.Context, db *sql.DB) error {
 		if n == 0 {
 			break
 		}
-		updatedSome = true
 	}
 
-	if updatedSome {
+	var hasHeights bool
+	if err := db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM block_headers WHERE height IS NOT NULL AND height != 0)`,
+	).Scan(&hasHeights); err != nil {
+		return fmt.Errorf("checking existing heights: %w", err)
+	}
+	if hasHeights {
 		return nil
 	}
 
