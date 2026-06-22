@@ -110,7 +110,6 @@ func (d *Daemon) sync(ctx context.Context) error {
 func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 	current := tip
 	inserted := 0
-	insertedMtx := sync.Mutex{}
 
 	for {
 		exists, err := d.blockExists(ctx, current)
@@ -124,18 +123,11 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 		}
 
 		if !exists {
-			go func() {
-				for {
-					if err := InsertMsgBlock(ctx, d.db, block); err != nil {
-						log.Printf("error inserting block %s: %w", &current, err)
-						continue
-					}
-					insertedMtx.Lock()
-					inserted++
-					log.Printf("inserted block %s (%d so far this sync)", &current, inserted)
-					insertedMtx.Unlock()
-				}
-			}()
+			if err := InsertMsgBlock(ctx, d.db, block); err != nil {
+				return fmt.Errorf("inserting block %s: %w", &current, err)
+			}
+			inserted++
+			log.Printf("inserted block %s (%d so far this sync)", &current, inserted)
 		}
 
 		prev := block.Header.PrevBlock
@@ -145,11 +137,9 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 		current = prev
 	}
 
-	insertedMtx.Lock()
 	if inserted > 0 {
 		log.Printf("sync complete: inserted %d block(s)", inserted)
 	}
-	insertedMtx.Unlock()
 	return nil
 }
 
