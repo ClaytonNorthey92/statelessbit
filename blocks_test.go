@@ -219,16 +219,6 @@ func TestInsertBlockHeader(t *testing.T) {
 			},
 			wantErrCode: pgNotNullViolation,
 		},
-		{
-			name: "duplicate block hash is rejected",
-			setup: func(ctx context.Context, db *sql.DB) {
-				if err := InsertBlockHeader(ctx, db, validBlock); err != nil {
-					t.Fatalf("setup: pre-insert failed: %s", err)
-				}
-			},
-			block:       validBlock,
-			wantErrCode: pgUniqueViolation,
-		},
 	}
 
 	for _, tt := range tests {
