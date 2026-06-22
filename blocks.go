@@ -150,6 +150,23 @@ func InsertMsgBlock(ctx context.Context, db *sql.DB, msg *wire.MsgBlock) error {
 }
 
 func insertBlockHeader(ctx context.Context, ex sqlExecer, b *BlockHeader) error {
+	if _, err := ex.ExecContext(ctx, `
+		DELETE FROM txins WHERE block_hash IN (
+			SELECT hash FROM block_headers WHERE prev_hash = $1 AND hash != $2
+		)`, b.PrevHash, b.Hash); err != nil {
+		return err
+	}
+	if _, err := ex.ExecContext(ctx, `
+		DELETE FROM txouts WHERE block_hash IN (
+			SELECT hash FROM block_headers WHERE prev_hash = $1 AND hash != $2
+		)`, b.PrevHash, b.Hash); err != nil {
+		return err
+	}
+	if _, err := ex.ExecContext(ctx, `
+		DELETE FROM block_headers WHERE prev_hash = $1 AND hash != $2`,
+		b.PrevHash, b.Hash); err != nil {
+		return err
+	}
 	_, err := ex.ExecContext(ctx, `
 		INSERT INTO block_headers (hash, version, prev_hash, merkle_root, timestamp, bits, nonce)
 		VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
