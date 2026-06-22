@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lib/pq"
 	"mydatabase"
 )
@@ -14,7 +15,149 @@ import (
 const (
 	pgUniqueViolation  pq.ErrorCode = "23505"
 	pgNotNullViolation pq.ErrorCode = "23502"
+	pgFKViolation      pq.ErrorCode = "23503"
 )
+
+func TestInsertTxOut(t *testing.T) {
+	validBlockHash := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	validTxHash := []byte("tttttttttttttttttttttttttttttttt")
+	validTxOut := &wire.TxOut{Value: 5000000000, PkScript: []byte{0x51}}
+
+	setupBlock := func(ctx context.Context, db *sql.DB) {
+		if err := InsertBlockHeader(ctx, db, &BlockHeader{
+			Hash:       validBlockHash,
+			Version:    1,
+			PrevHash:   make([]byte, 32),
+			MerkleRoot: make([]byte, 32),
+			Timestamp:  time.Now().UTC().Truncate(time.Microsecond),
+			Bits:       0x1d00ffff,
+			Nonce:      2083236893,
+		}); err != nil {
+			t.Fatalf("setup: InsertBlockHeader failed: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name        string
+		setup       func(ctx context.Context, db *sql.DB)
+		blockHash   []byte
+		txHash      []byte
+		index       int
+		txOut       *wire.TxOut
+		cancelCtx   bool
+		wantErrCode pq.ErrorCode
+	}{
+		{
+			name:      "valid insert succeeds",
+			setup:     setupBlock,
+			blockHash: validBlockHash,
+			txHash:    validTxHash,
+			index:     0,
+			txOut:     validTxOut,
+		},
+		{
+			name: "duplicate is silently ignored",
+			setup: func(ctx context.Context, db *sql.DB) {
+				setupBlock(ctx, db)
+				if err := insertTxOut(ctx, db, validBlockHash, validTxHash, 0, validTxOut); err != nil {
+					t.Fatalf("setup: first insert failed: %v", err)
+				}
+			},
+			blockHash: validBlockHash,
+			txHash:    validTxHash,
+			index:     0,
+			txOut:     validTxOut,
+		},
+		{
+			name:        "nil blockHash is rejected",
+			blockHash:   nil,
+			txHash:      validTxHash,
+			index:       0,
+			txOut:       validTxOut,
+			wantErrCode: pgNotNullViolation,
+		},
+		{
+			name:        "nil txHash is rejected",
+			setup:       setupBlock,
+			blockHash:   validBlockHash,
+			txHash:      nil,
+			index:       0,
+			txOut:       validTxOut,
+			wantErrCode: pgNotNullViolation,
+		},
+		{
+			name:        "nil pk_script is rejected",
+			setup:       setupBlock,
+			blockHash:   validBlockHash,
+			txHash:      validTxHash,
+			index:       0,
+			txOut:       &wire.TxOut{Value: 5000000000, PkScript: nil},
+			wantErrCode: pgNotNullViolation,
+		},
+		{
+			name:        "blockHash with no matching block header is rejected",
+			blockHash:   []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			txHash:      validTxHash,
+			index:       0,
+			txOut:       validTxOut,
+			wantErrCode: pgFKViolation,
+		},
+		{
+			name:      "cancelled context returns error",
+			setup:     setupBlock,
+			blockHash: validBlockHash,
+			txHash:    validTxHash,
+			index:     0,
+			txOut:     validTxOut,
+			cancelCtx: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, drop, err := database.CreateNewRandomDatabase(t.Context())
+			if err != nil {
+				t.Fatalf("could not create test database: %s", err)
+			}
+			defer drop()
+
+			if tt.setup != nil {
+				tt.setup(t.Context(), db)
+			}
+
+			ctx := t.Context()
+			if tt.cancelCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			err = insertTxOut(ctx, db, tt.blockHash, tt.txHash, tt.index, tt.txOut)
+
+			if tt.cancelCtx {
+				if err == nil {
+					t.Error("expected error for cancelled context, got nil")
+				}
+				return
+			}
+
+			if tt.wantErrCode == "" {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			var pqErr *pq.Error
+			if !errors.As(err, &pqErr) {
+				t.Fatalf("expected *pq.Error, got: %v", err)
+			}
+			if pqErr.Code != tt.wantErrCode {
+				t.Errorf("error code = %q, want %q", pqErr.Code, tt.wantErrCode)
+			}
+		})
+	}
+}
 
 func TestInsertBlockHeader(t *testing.T) {
 	validBlock := &BlockHeader{
