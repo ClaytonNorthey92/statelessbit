@@ -23,6 +23,11 @@ type sqlExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+type dbConn interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func MsgBlockToBlockHeader(msg *wire.MsgBlock) *BlockHeader {
 	hash := msg.Header.BlockHash()
 	return &BlockHeader{
@@ -124,7 +129,7 @@ func SetBlockHeights(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func InsertMsgBlock(ctx context.Context, db *sql.DB, msg *wire.MsgBlock) error {
+func InsertMsgBlock(ctx context.Context, db dbConn, msg *wire.MsgBlock) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

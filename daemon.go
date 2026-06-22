@@ -108,12 +108,18 @@ func (d *Daemon) sync(ctx context.Context) error {
 }
 
 func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
+	conn, err := d.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
 	current := tip
 	inserted := 0
 	insertedMtx := sync.Mutex{}
 
 	for {
-		exists, err := d.blockExists(ctx, current)
+		exists, err := d.blockExists(ctx, conn, current)
 		if err != nil {
 			return err
 		}
@@ -126,8 +132,8 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 		if !exists {
 			go func() {
 				for {
-					if err := InsertMsgBlock(ctx, d.db, block); err != nil {
-						log.Printf("error inserting block %s: %w", &current, err)
+					if err := InsertMsgBlock(ctx, conn, block); err != nil {
+						log.Printf("error inserting block %s: %v", &current, err)
 						continue
 					}
 					insertedMtx.Lock()
@@ -154,9 +160,9 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 	return nil
 }
 
-func (d *Daemon) blockExists(ctx context.Context, hash chainhash.Hash) (bool, error) {
+func (d *Daemon) blockExists(ctx context.Context, conn dbConn, hash chainhash.Hash) (bool, error) {
 	var exists bool
-	err := d.db.QueryRowContext(ctx,
+	err := conn.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM block_headers WHERE hash = $1)`,
 		hash[:],
 	).Scan(&exists)
