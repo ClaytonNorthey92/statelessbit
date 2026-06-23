@@ -1,0 +1,2 @@
+ALTER TABLE txouts DROP COLUMN pk_script;
+ALTER TABLE txouts ADD COLUMN addresses TEXT[] NOT NULL DEFAULT '{}';
