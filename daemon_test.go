@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/testcontainers/testcontainers-go"
@@ -99,7 +100,7 @@ func TestDaemonIndexesChain(t *testing.T) {
 		t.Fatalf("generating %d blocks: %v", numBlocks, err)
 	}
 
-	d := NewDaemon(db, client)
+	d := NewDaemon(db, client, &chaincfg.RegressionNetParams)
 	if err := d.sync(ctx); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestDaemonIndexesChain(t *testing.T) {
 		assertBlockHeader(ctx, t, db, block)
 
 		for _, tx := range block.Transactions {
-			assertTxOuts(ctx, t, db, hash[:], tx)
+			assertTxOuts(ctx, t, db, hash[:], tx, &chaincfg.RegressionNetParams)
 			assertTxIns(ctx, t, db, hash[:], tx)
 		}
 	}

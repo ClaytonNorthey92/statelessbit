@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lib/pq"
 )
 
 type BlockHeader struct {
@@ -129,7 +132,7 @@ func SetBlockHeights(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func InsertMsgBlock(ctx context.Context, db dbConn, msg *wire.MsgBlock) error {
+func InsertMsgBlock(ctx context.Context, db dbConn, msg *wire.MsgBlock, chainParams *chaincfg.Params) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -144,7 +147,7 @@ func InsertMsgBlock(ctx context.Context, db dbConn, msg *wire.MsgBlock) error {
 	for _, msgTx := range msg.Transactions {
 		txHash := msgTx.TxHash()
 		for i, txOut := range msgTx.TxOut {
-			if err := insertTxOut(ctx, tx, header.Hash, txHash[:], i, txOut); err != nil {
+			if err := insertTxOut(ctx, tx, header.Hash, txHash[:], i, txOut, chainParams); err != nil {
 				return err
 			}
 		}
@@ -194,11 +197,16 @@ func insertTxIn(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, ind
 	return err
 }
 
-func insertTxOut(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, index int, txOut *wire.TxOut) error {
+func insertTxOut(ctx context.Context, ex sqlExecer, blockHash, txHash []byte, index int, txOut *wire.TxOut, chainParams *chaincfg.Params) error {
+	_, addrs, _, _ := txscript.ExtractPkScriptAddrs(txOut.PkScript, chainParams)
+	addresses := make([]string, len(addrs))
+	for i, addr := range addrs {
+		addresses[i] = addr.EncodeAddress()
+	}
 	_, err := ex.ExecContext(ctx, `
-		INSERT INTO txouts (block_hash, tx_hash, tx_index, value, pk_script)
+		INSERT INTO txouts (block_hash, tx_hash, tx_index, value, addresses)
 		VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
-		blockHash, txHash, index, txOut.Value, txOut.PkScript,
+		blockHash, txHash, index, txOut.Value, pq.Array(addresses),
 	)
 	return err
 }

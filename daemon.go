@@ -8,17 +8,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 )
 
 type Daemon struct {
-	db     *sql.DB
-	client *rpcclient.Client
+	db          *sql.DB
+	client      *rpcclient.Client
+	chainParams *chaincfg.Params
 }
 
-func NewDaemon(db *sql.DB, client *rpcclient.Client) *Daemon {
-	return &Daemon{db: db, client: client}
+func NewDaemon(db *sql.DB, client *rpcclient.Client, chainParams *chaincfg.Params) *Daemon {
+	return &Daemon{db: db, client: client, chainParams: chainParams}
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
@@ -129,7 +131,7 @@ func (d *Daemon) syncFrom(ctx context.Context, tip chainhash.Hash) error {
 		}
 
 		if !exists {
-			if err := InsertMsgBlock(ctx, conn, block); err != nil {
+			if err := InsertMsgBlock(ctx, conn, block, d.chainParams); err != nil {
 				return fmt.Errorf("error inserting block %s: %w", &current, err)
 			}
 			inserted++

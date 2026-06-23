@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lib/pq"
 	"mydatabase"
@@ -21,7 +22,9 @@ const (
 func TestInsertTxOut(t *testing.T) {
 	validBlockHash := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	validTxHash := []byte("tttttttttttttttttttttttttttttttt")
-	validTxOut := &wire.TxOut{Value: 5000000000, PkScript: []byte{0x51}}
+	// P2WPKH script (OP_0 <20-byte-hash>) so address extraction succeeds.
+	validTxOut := &wire.TxOut{Value: 5000000000, PkScript: append([]byte{0x00, 0x14}, make([]byte, 20)...)}
+	chainParams := &chaincfg.RegressionNetParams
 
 	setupBlock := func(ctx context.Context, db *sql.DB) {
 		if err := InsertBlockHeader(ctx, db, &BlockHeader{
@@ -59,7 +62,7 @@ func TestInsertTxOut(t *testing.T) {
 			name: "duplicate is silently ignored",
 			setup: func(ctx context.Context, db *sql.DB) {
 				setupBlock(ctx, db)
-				if err := insertTxOut(ctx, db, validBlockHash, validTxHash, 0, validTxOut); err != nil {
+				if err := insertTxOut(ctx, db, validBlockHash, validTxHash, 0, validTxOut, chainParams); err != nil {
 					t.Fatalf("setup: first insert failed: %v", err)
 				}
 			},
@@ -86,13 +89,12 @@ func TestInsertTxOut(t *testing.T) {
 			wantErrCode: pgNotNullViolation,
 		},
 		{
-			name:        "nil pk_script is rejected",
-			setup:       setupBlock,
-			blockHash:   validBlockHash,
-			txHash:      validTxHash,
-			index:       0,
-			txOut:       &wire.TxOut{Value: 5000000000, PkScript: nil},
-			wantErrCode: pgNotNullViolation,
+			name:      "non-standard pkscript stores empty addresses without error",
+			setup:     setupBlock,
+			blockHash: validBlockHash,
+			txHash:    validTxHash,
+			index:     0,
+			txOut:     &wire.TxOut{Value: 5000000000, PkScript: []byte{0x51}},
 		},
 		{
 			name:        "blockHash with no matching block header is rejected",
@@ -132,7 +134,7 @@ func TestInsertTxOut(t *testing.T) {
 				cancel()
 			}
 
-			err = insertTxOut(ctx, db, tt.blockHash, tt.txHash, tt.index, tt.txOut)
+			err = insertTxOut(ctx, db, tt.blockHash, tt.txHash, tt.index, tt.txOut, chainParams)
 
 			if tt.cancelCtx {
 				if err == nil {

@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
 	_ "github.com/lib/pq"
 	"mydatabase"
@@ -49,7 +50,7 @@ func main() {
 
 	log.Printf("starting daemon (rpc=%s)", getEnv("BITCOIN_RPC_HOST", "localhost:18443"))
 
-	if err := NewDaemon(db, client).Run(ctx); err != nil && err != context.Canceled {
+	if err := NewDaemon(db, client, networkChainParams()).Run(ctx); err != nil && err != context.Canceled {
 		log.Fatalf("daemon exited: %v", err)
 	}
 }
@@ -59,4 +60,15 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func networkChainParams() *chaincfg.Params {
+	switch os.Getenv("BITCOIN_NETWORK") {
+	case "mainnet":
+		return &chaincfg.MainNetParams
+	case "testnet":
+		return &chaincfg.TestNet3Params
+	default:
+		return &chaincfg.RegressionNetParams
+	}
 }

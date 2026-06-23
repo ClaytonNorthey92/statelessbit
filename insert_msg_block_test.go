@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lib/pq"
 	"mydatabase"
 )
 
@@ -25,9 +28,10 @@ func testTxIn() *wire.TxIn {
 }
 
 func testTxOut() *wire.TxOut {
+	// P2WPKH script (OP_0 <20-byte-hash>) so address extraction succeeds.
 	return &wire.TxOut{
 		Value:    5000000000,
-		PkScript: []byte{0x51},
+		PkScript: append([]byte{0x00, 0x14}, make([]byte, 20)...),
 	}
 }
 
@@ -96,13 +100,13 @@ func assertBlockHeader(ctx context.Context, t *testing.T, db *sql.DB, msg *wire.
 	}
 }
 
-func assertTxOuts(ctx context.Context, t *testing.T, db *sql.DB, blockHash []byte, tx *wire.MsgTx) {
+func assertTxOuts(ctx context.Context, t *testing.T, db *sql.DB, blockHash []byte, tx *wire.MsgTx, chainParams *chaincfg.Params) {
 	t.Helper()
 
 	txHash := tx.TxHash()
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT block_hash, tx_hash, tx_index, value, pk_script
+		SELECT block_hash, tx_hash, tx_index, value, addresses
 		FROM txouts
 		WHERE block_hash = $1
 		ORDER BY tx_index`, blockHash)
@@ -118,15 +122,21 @@ func assertTxOuts(ctx context.Context, t *testing.T, db *sql.DB, blockHash []byt
 			break
 		}
 
-		var gotBlockHash, gotTxHash, gotPkScript []byte
+		var gotBlockHash, gotTxHash []byte
 		var gotTxIndex int
 		var gotValue int64
+		var gotAddresses pq.StringArray
 
-		if err := rows.Scan(&gotBlockHash, &gotTxHash, &gotTxIndex, &gotValue, &gotPkScript); err != nil {
+		if err := rows.Scan(&gotBlockHash, &gotTxHash, &gotTxIndex, &gotValue, &gotAddresses); err != nil {
 			t.Fatalf("scanning txout row %d: %v", i, err)
 		}
 
 		want := tx.TxOut[i]
+		_, wantAddrs, _, _ := txscript.ExtractPkScriptAddrs(want.PkScript, chainParams)
+		wantAddresses := make(pq.StringArray, len(wantAddrs))
+		for j, addr := range wantAddrs {
+			wantAddresses[j] = addr.EncodeAddress()
+		}
 
 		t.Logf("txout[%d] block_hash: got=%s, want=%s", i, hex.EncodeToString(gotBlockHash), hex.EncodeToString(blockHash))
 		if !bytes.Equal(gotBlockHash, blockHash) {
@@ -142,9 +152,15 @@ func assertTxOuts(ctx context.Context, t *testing.T, db *sql.DB, blockHash []byt
 		if gotValue != want.Value {
 			t.Errorf("txout[%d] value = %d, want %d", i, gotValue, want.Value)
 		}
-		t.Logf("txout[%d] pk_script: got=%s, want=%s", i, hex.EncodeToString(gotPkScript), hex.EncodeToString(want.PkScript))
-		if !bytes.Equal(gotPkScript, want.PkScript) {
-			t.Errorf("txout[%d] pk_script = %s, want %s", i, hex.EncodeToString(gotPkScript), hex.EncodeToString(want.PkScript))
+		t.Logf("txout[%d] addresses: got=%v, want=%v", i, []string(gotAddresses), []string(wantAddresses))
+		if len(gotAddresses) != len(wantAddresses) {
+			t.Errorf("txout[%d] addresses = %v, want %v", i, []string(gotAddresses), []string(wantAddresses))
+		} else {
+			for j := range gotAddresses {
+				if gotAddresses[j] != wantAddresses[j] {
+					t.Errorf("txout[%d] addresses[%d] = %q, want %q", i, j, gotAddresses[j], wantAddresses[j])
+				}
+			}
 		}
 
 		i++
@@ -266,6 +282,8 @@ func TestInsertMsgBlock(t *testing.T) {
 		},
 	}
 
+	chainParams := &chaincfg.RegressionNetParams
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db, drop, err := database.CreateNewRandomDatabase(t.Context())
@@ -276,14 +294,14 @@ func TestInsertMsgBlock(t *testing.T) {
 
 			msg := newTestMsgBlock(tt.txins, tt.txouts)
 
-			if err := InsertMsgBlock(t.Context(), db, msg); err != nil {
+			if err := InsertMsgBlock(t.Context(), db, msg, chainParams); err != nil {
 				t.Fatalf("InsertMsgBlock() error = %v", err)
 			}
 
 			blockHash := msg.Header.BlockHash()
 			assertBlockHeader(t.Context(), t, db, msg)
 			for _, tx := range msg.Transactions {
-				assertTxOuts(t.Context(), t, db, blockHash[:], tx)
+				assertTxOuts(t.Context(), t, db, blockHash[:], tx, chainParams)
 				assertTxIns(t.Context(), t, db, blockHash[:], tx)
 			}
 		})
