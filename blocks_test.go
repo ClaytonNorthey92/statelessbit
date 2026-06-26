@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,6 +157,83 @@ func TestInsertTxOut(t *testing.T) {
 			}
 			if pqErr.Code != tt.wantErrCode {
 				t.Errorf("error code = %q, want %q", pqErr.Code, tt.wantErrCode)
+			}
+		})
+	}
+}
+
+func TestInsertTxOutAddressPrefix(t *testing.T) {
+	// P2WPKH script (OP_0 <20-byte-hash>) produces a bech32 address whose
+	// prefix depends on which network's chain params are used.
+	pkScript := append([]byte{0x00, 0x14}, make([]byte, 20)...)
+	txOut := &wire.TxOut{Value: 5000000000, PkScript: pkScript}
+
+	blockHash := []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	txHash := []byte("tttttttttttttttttttttttttttttttt")
+
+	tests := []struct {
+		name           string
+		chainParams    *chaincfg.Params
+		wantAddrPrefix string
+	}{
+		{
+			name:           "mainnet uses bc1q prefix",
+			chainParams:    &chaincfg.MainNetParams,
+			wantAddrPrefix: "bc1q",
+		},
+		{
+			name:           "testnet3 uses tb1q prefix",
+			chainParams:    &chaincfg.TestNet3Params,
+			wantAddrPrefix: "tb1q",
+		},
+		{
+			name:           "testnet4 uses tb1q prefix",
+			chainParams:    &chaincfg.TestNet4Params,
+			wantAddrPrefix: "tb1q",
+		},
+		{
+			name:           "regtest uses bcrt1q prefix",
+			chainParams:    &chaincfg.RegressionNetParams,
+			wantAddrPrefix: "bcrt1q",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, drop, err := database.CreateNewRandomDatabase(t.Context())
+			if err != nil {
+				t.Fatalf("could not create test database: %s", err)
+			}
+			defer drop()
+
+			if err := InsertBlockHeader(t.Context(), db, &BlockHeader{
+				Hash:       blockHash,
+				Version:    1,
+				PrevHash:   make([]byte, 32),
+				MerkleRoot: make([]byte, 32),
+				Timestamp:  time.Now().UTC().Truncate(time.Microsecond),
+				Bits:       0x1d00ffff,
+				Nonce:      2083236893,
+			}); err != nil {
+				t.Fatalf("InsertBlockHeader: %v", err)
+			}
+
+			if err := insertTxOut(t.Context(), db, blockHash, txHash, 0, txOut, tt.chainParams); err != nil {
+				t.Fatalf("insertTxOut: %v", err)
+			}
+
+			var addresses pq.StringArray
+			if err := db.QueryRowContext(t.Context(),
+				`SELECT addresses FROM txouts WHERE tx_hash = $1 AND tx_index = 0`, txHash,
+			).Scan(&addresses); err != nil {
+				t.Fatalf("querying addresses: %v", err)
+			}
+
+			if len(addresses) == 0 {
+				t.Fatal("expected at least one address, got none")
+			}
+			if !strings.HasPrefix(addresses[0], tt.wantAddrPrefix) {
+				t.Errorf("address = %q, want prefix %q", addresses[0], tt.wantAddrPrefix)
 			}
 		})
 	}

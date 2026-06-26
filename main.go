@@ -68,6 +68,8 @@ func networkChainParams() *chaincfg.Params {
 		return &chaincfg.MainNetParams
 	case "testnet":
 		return &chaincfg.TestNet3Params
+	case "testnet4":
+		return &chaincfg.TestNet4Params
 	default:
 		return &chaincfg.RegressionNetParams
 	}
